@@ -1,0 +1,253 @@
+import React, { useEffect, useMemo, useState } from "react";
+
+// ============================================= // Smoke Heist – React MVP (Pickup, Delivery, Accounts) // Single-file app. Tailwind classes used for styling. // Replace PHONE_DISPLAY/PHONE_TEL and WHATSAPP message text below. // =============================================
+
+// --- LocalStorage helpers --- const LS_KEYS = { USER: "smokeheist_user", FAVS: "smokeheist_favorites", ORDERS: "smokeheist_orders", STOCK: "smokeheist_stock", }; const saveLS = (k, v) => localStorage.setItem(k, JSON.stringify(v)); const loadLS = (k, fallback) => { try { const v = JSON.parse(localStorage.getItem(k)); return v ?? fallback; } catch (_) { return fallback; } };
+
+// --- Utils --- const letters = "ABCDEFGHJKLMNPQRSTUVWXYZ"; const genOrderCode = () => { const randL = () => letters[Math.floor(Math.random() * letters.length)]; const num = String(Math.floor(Math.random() * 10000)).padStart(4, "0"); return SH-${randL()}${randL()}${num}; };
+
+// --- Config (edit these) --- const PHONE_DISPLAY = "+263 77 000 0000"; // change me const PHONE_TEL = "+263770000000"; // change me (no spaces) const WHATSAPP_LINK = https://wa.me/${PHONE_TEL.replace(/\D/g, "")}?text=${encodeURIComponent( "Hi Smoke Heist! I'd like to place/confirm an order." )};
+
+// Harare delivery zones (USD demo prices) const DELIVERY_ZONES = { CBD: 2, Avondale: 3, Borrowdale: 4, "Mount Pleasant": 4, Westgate: 4, Greendale: 3, Highlands: 4, Marlborough: 3, Mabvuku: 5, Budiriro: 5, Chitungwiza: 6, };
+
+// Demo catalog const DEMO_PRODUCTS = [ { id: "devx", name: "Vape Device X", price: 45, nicotine: "Device", img: "https://images.unsplash.com/photo-1520970225720-179646f2b2f4?q=80&w=1200&auto=format&fit=crop", stock: 7, category: "Devices", }, { id: "pod-luxe", name: "Pod Kit Luxe Q", price: 38, nicotine: "Device", img: "https://images.unsplash.com/photo-1620656851689-9b6c01b1e9dc?q=80&w=1200&auto=format&fit=crop", stock: 5, category: "Pods", }, { id: "eliq-bb", name: "Blueberry Blast 30ml (3mg)", price: 12, nicotine: "E-liquid 3mg", img: "https://images.unsplash.com/photo-1524592094714-0f0654e20314?q=80&w=1200&auto=format&fit=crop", stock: 12, category: "E-Liquids", }, { id: "eliq-salt-mango", name: "Mango Ice Salt 10ml (25mg)", price: 10, nicotine: "Salt 25mg", img: "https://images.unsplash.com/photo-1580501171383-d2a4cf1bafb6?q=80&w=1200&auto=format&fit=crop", stock: 8, category: "E-Liquids", }, { id: "acc-coil", name: "Replacement Coils (5 pack)", price: 15, nicotine: "Accessory", img: "https://images.unsplash.com/photo-1520970180428-0e41b90a270a?q=80&w=1200&auto=format&fit=crop", stock: 20, category: "Accessories", }, ];
+
+// ============================================= // App // ============================================= export default function App() { const [route, setRoute] = useState("home"); const [user, setUser] = useState(() => loadLS(LS_KEYS.USER, null)); const [favorites, setFavorites] = useState(() => loadLS(LS_KEYS.FAVS, [])); const [orders, setOrders] = useState(() => loadLS(LS_KEYS.ORDERS, [])); const [stock, setStock] = useState(() => { const saved = loadLS(LS_KEYS.STOCK, null); if (saved) return saved; const initial = DEMO_PRODUCTS.reduce((acc, p) => ((acc[p.id] = p.stock), acc), {}); saveLS(LS_KEYS.STOCK, initial); return initial; });
+
+useEffect(() => saveLS(LS_KEYS.USER, user), [user]); useEffect(() => saveLS(LS_KEYS.FAVS, favorites), [favorites]); useEffect(() => saveLS(LS_KEYS.ORDERS, orders), [orders]); useEffect(() => saveLS(LS_KEYS.STOCK, stock), [stock]);
+
+const catalog = useMemo( () => DEMO_PRODUCTS.map((p) => ({ ...p, stock: stock[p.id] ?? 0 })), [stock] );
+
+const addFavorite = (id) => { if (!user) return alert("Please log in to save favorites."); if (!favorites.includes(id)) setFavorites([...favorites, id]); }; const removeFavorite = (id) => setFavorites(favorites.filter((f) => f !== id));
+
+const placeOrder = ({ productId, quantity, fulfillment, suburb, address }) => { const product = catalog.find((p) => p.id === productId); if (!product) return alert("Product not found."); if (quantity < 1) return alert("Quantity must be at least 1."); if (quantity > (stock[productId] ?? 0)) return alert("Not enough stock available.");
+
+const code = genOrderCode();
+const fee = fulfillment === "delivery" ? DELIVERY_ZONES[suburb] ?? null : 0;
+const newOrder = {
+  code,
+  user: user ? { name: user.name, phone: user.phone, email: user.email } : null,
+  product: { id: product.id, name: product.name, price: product.price },
+  quantity,
+  fulfillment,
+  suburb: fulfillment === "delivery" ? suburb : null,
+  address: fulfillment === "delivery" ? address : null,
+  deliveryFee: fee,
+  status: fulfillment === "pickup" ? "Pending (Pickup)" : "Pending (Delivery)",
+  createdAt: new Date().toISOString(),
+};
+
+setOrders([newOrder, ...orders]);
+setStock({ ...stock, [productId]: (stock[productId] ?? 0) - quantity });
+
+const msg =
+  `Thanks for ordering!\nOrder code: ${code}\nItem: ${product.name} x${quantity}\n` +
+  (fulfillment === "delivery"
+    ? fee
+      ? `Delivery: Harare (${suburb}) — $${fee.toFixed(2)}`
+      : "Delivery fee to be confirmed"
+    : "Pickup in-store");
+alert(msg);
+
+};
+
+const markOrder = (code, newStatus) => setOrders((os) => os.map((o) => (o.code === code ? { ...o, status: newStatus } : o)));
+
+return ( <div className="min-h-screen bg-gray-50 text-gray-900"> <Header route={route} setRoute={setRoute} />
+
+{route === "home" && <Hero setRoute={setRoute} />}
+  {route === "shop" && (
+    <Shop
+      catalog={catalog}
+      favorites={favorites}
+      addFavorite={addFavorite}
+      removeFavorite={removeFavorite}
+      placeOrder={placeOrder}
+      user={user}
+    />
+  )}
+  {route === "how" && <HowTo />}
+  {route === "contact" && <Contact />}
+  {route === "account" && (
+    <Account
+      user={user}
+      setUser={setUser}
+      orders={orders}
+      favorites={favorites}
+      catalog={catalog}
+      setRoute={setRoute}
+    />
+  )}
+  {route === "seller" && <SellerPanel orders={orders} markOrder={markOrder} />}
+
+  <Footer setRoute={setRoute} />
+</div>
+
+); }
+
+// ============================================= // UI Components // ============================================= function Header({ route, setRoute }) { return ( <header className="flex flex-col md:flex-row gap-3 md:gap-0 md:justify-between md:items-center p-4 bg-black text-white sticky top-0 z-50"> <div className="flex items-center gap-3"> <div className="w-9 h-9 rounded-2xl bg-white text-black grid place-content-center font-extrabold">SH</div> <h1 className="text-2xl font-bold tracking-wide">Smoke Heist</h1> </div> <nav className="flex flex-wrap items-center gap-2 md:gap-4"> <NavLink label="Home" active={route === "home"} onClick={() => setRoute("home")} /> <NavLink label="Shop" active={route === "shop"} onClick={() => setRoute("shop")} /> <NavLink label="How to Order" active={route === "how"} onClick={() => setRoute("how")} /> <NavLink label="Contact" active={route === "contact"} onClick={() => setRoute("contact")} /> <NavLink label="Seller Panel" active={route === "seller"} onClick={() => setRoute("seller")} /> </nav> <div className="flex items-center gap-3"> <button onClick={() => setRoute("account")} className="bg-white text-black px-3 py-1.5 rounded-xl font-semibold hover:bg-gray-200">Login / Sign Up</button> <a href={tel:${PHONE_TEL}} className="text-sm underline whitespace-nowrap">{PHONE_DISPLAY}</a> </div> </header> ); }
+
+function NavLink({ label, active, onClick }) { return ( <button onClick={onClick} className={px-3 py-1.5 rounded-xl transition ${active ? "bg-white text-black" : "hover:bg-white/10"}}>{label}</button> ); }
+
+function Hero({ setRoute }) { return ( <section className="relative overflow-hidden text-center py-20 bg-gradient-to-r from-black via-gray-800 to-black text-white"> <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_20%_20%,white,transparent_30%),radial-gradient(circle_at_80%_80%,white,transparent_30%)]" /> <div className="relative"> <h2 className="text-4xl md:text-5xl font-extrabold mb-4">Your Vape. Your Heist.</h2> <p className="mb-6 text-lg opacity-90">Reserve online, pick up in store or get fast delivery in Harare.</p> <div className="flex justify-center gap-3"> <button onClick={() => setRoute("shop")} className="bg-red-500 px-6 py-3 rounded-2xl text-lg font-semibold hover:bg-red-600">Shop Now</button> <a href={WHATSAPP_LINK} target="_blank" rel="noreferrer" className="px-6 py-3 rounded-2xl text-lg font-semibold border border-white/40 hover:bg-white/10">Message Us</a> </div> </div> </section> ); }
+
+function Shop({ catalog, favorites, addFavorite, removeFavorite, placeOrder, user }) { const [filter, setFilter] = useState("All"); const cats = ["All", ...Array.from(new Set(catalog.map((c) => c.category)))]; const filtered = catalog.filter((c) => (filter === "All" ? true : c.category === filter));
+
+return ( <section className="p-6 md:p-10"> <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-6"> <div> <h3 className="text-3xl font-bold">Products</h3> <p className="text-gray-600">Tap the heart to save favorites (login required).</p> </div> <div className="flex flex-wrap gap-2"> {cats.map((c) => ( <button key={c} onClick={() => setFilter(c)} className={px-3 py-1.5 rounded-xl border ${filter === c ? "bg-black text-white" : "bg-white hover:bg-gray-100"}}>{c}</button> ))} </div> </div>
+
+<div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+    {filtered.map((p) => (
+      <ProductCard
+        key={p.id}
+        product={p}
+        isFav={favorites.includes(p.id)}
+        onFav={() => (favorites.includes(p.id) ? removeFavorite(p.id) : addFavorite(p.id))}
+        onOrder={(payload) => placeOrder(payload)}
+        user={user}
+      />
+    ))}
+  </div>
+</section>
+
+); }
+
+function ProductCard({ product, isFav, onFav, onOrder, user }) { const [open, setOpen] = useState(false); const low = product.stock <= 5; const out = product.stock <= 0; return ( <div className="bg-white rounded-2xl shadow p-4 flex flex-col"> <img src={product.img} alt={product.name} className="rounded-xl h-44 w-full object-cover mb-3" /> <div className="flex-1"> <h4 className="text-lg font-semibold leading-tight">{product.name}</h4> <p className="text-gray-600 text-sm">{product.nicotine}</p> <div className="mt-2 flex items-center justify-between"> <div className="text-xl font-bold">${product.price}</div> <div className={text-sm ${out ? "text-red-600" : low ? "text-orange-600" : "text-green-700"}}> {out ? "Out of stock" : low ? Only ${product.stock} left : In stock (${product.stock})} </div> </div> </div> <div className="mt-3 flex items-center justify-between"> <button onClick={onFav} className={px-3 py-1.5 rounded-xl border ${isFav ? "bg-red-500 text-white" : "bg-white hover:bg-gray-100"}}>{isFav ? "♥ Saved" : "♡ Favorite"}</button> <button disabled={out} onClick={() => setOpen(true)} className={px-4 py-2 rounded-xl font-semibold ${out ? "bg-gray-200 text-gray-500" : "bg-black text-white hover:bg-gray-900"}}>Order Now</button> </div> {open && ( <OrderModal product={product} user={user} onClose={() => setOpen(false)} onSubmit={(data) => { onOrder({ productId: product.id, ...data }); setOpen(false); }} /> )} </div> ); }
+
+function OrderModal({ product, user, onClose, onSubmit }) { const [quantity, setQuantity] = useState(1); const [fulfillment, setFulfillment] = useState("pickup"); const [suburb, setSuburb] = useState("CBD"); const [address, setAddress] = useState("");
+
+const deliveryFee = fulfillment === "delivery" ? DELIVERY_ZONES[suburb] ?? null : 0;
+
+return ( <div className="fixed inset-0 bg-black/50 grid place-items-center p-4 z-50"> <div className="bg-white w-full max-w-lg rounded-2xl p-5"> <div className="flex justify-between items-start"> <h5 className="text-xl font-bold">Order: {product.name}</h5> <button onClick={onClose} className="text-gray-500 hover:text-black">✕</button> </div> <div className="mt-3 grid gap-3"> <label className="grid"> <span className="text-sm text-gray-600">Quantity</span> <input type="number" min={1} max={product.stock} value={quantity} onChange={(e) => setQuantity(Number(e.target.value))} className="border rounded-xl px-3 py-2" /> </label>
+
+<div className="flex gap-3">
+        <button onClick={() => setFulfillment("pickup")} className={`px-3 py-2 rounded-xl border ${fulfillment === "pickup" ? "bg-black text-white" : "bg-white"}`}>Pickup (Free)</button>
+        <button onClick={() => setFulfillment("delivery")} className={`px-3 py-2 rounded-xl border ${fulfillment === "delivery" ? "bg-black text-white" : "bg-white"}`}>Delivery (Harare)</button>
+      </div>
+
+      {fulfillment === "delivery" && (
+        <>
+          <label className="grid">
+            <span className="text-sm text-gray-600">Suburb</span>
+            <select value={suburb} onChange={(e) => setSuburb(e.target.value)} className="border rounded-xl px-3 py-2">
+              {Object.keys(DELIVERY_ZONES).map((z) => (
+                <option key={z} value={z}>{z} — ${DELIVERY_ZONES[z]}</option>
+              ))}
+            </select>
+          </label>
+          <label className="grid">
+            <span className="text-sm text-gray-600">Address</span>
+            <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="House/Complex + Street + Landmark" className="border rounded-xl px-3 py-2" />
+          </label>
+          <p className="text-sm text-gray-700">Estimated delivery fee: {deliveryFee ? `$${deliveryFee.toFixed(2)}` : "To be confirmed"}</p>
+        </>
+      )}
+
+      {!user && (
+        <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-2">Tip: Log in to auto-fill your details and track orders.</p>
+      )}
+
+      <button
+        onClick={() => onSubmit({ quantity, fulfillment, suburb, address })}
+        className="mt-2 bg-black text-white px-4 py-2 rounded-xl font-semibold hover:bg-gray-900"
+      >
+        Confirm Order
+      </button>
+    </div>
+  </div>
+</div>
+
+); }
+
+function HowTo() { return ( <section className="bg-gray-100 p-8"> <h3 className="text-3xl font-bold mb-4">How to Order</h3> <ol className="list-decimal list-inside space-y-2 text-lg"> <li>Sign up or log in (optional, faster checkout)</li> <li>Browse products & place your order online</li> <li>Choose pickup (free) or delivery (Harare only)</li> <li>Get a unique order code instantly</li> <li>Show your code at pickup or confirm at delivery</li> </ol> <p className="mt-4 text-red-600 font-semibold">Delivery fee depends on your location within Harare. Must be 18+.</p> </section> ); }
+
+function Contact() { return ( <section className="p-8"> <h3 className="text-3xl font-bold mb-4">Contact Us</h3> <p className="mb-2">Phone: <a href={tel:${PHONE_TEL}} className="underline">{PHONE_DISPLAY}</a></p> <p className="mb-2">WhatsApp: <a href={WHATSAPP_LINK} className="underline" target="_blank" rel="noreferrer">Message us instantly</a></p> <p className="mb-2">Location: <span className="font-semibold">123 Smoke Street, Harare</span></p> <p>Hours: Mon–Sat 9AM–7PM</p> </section> ); }
+
+function Account({ user, setUser, orders, favorites, catalog, setRoute }) { const [tab, setTab] = useState("login"); const [form, setForm] = useState({ name: "", phone: "", email: "", password: "" });
+
+const favItems = favorites.map((id) => catalog.find((p) => p.id === id)).filter(Boolean);
+
+const handleLogin = () => { if (!form.phone && !form.email) return alert("Enter phone or email"); // In a real app, validate server-side. Here we just set a demo user. const u = { name: form.name || "Customer", phone: form.phone, email: form.email }; setUser(u); setTab("dashboard"); }; const handleLogout = () => setUser(null);
+
+if (user && tab !== "dashboard") setTab("dashboard");
+
+return ( <section className="p-6 md:p-10"> <h3 className="text-3xl font-bold mb-4">My Account</h3> {!user ? ( <div className="grid md:grid-cols-2 gap-6"> <div className="bg-white rounded-2xl shadow p-5"> <h4 className="text-xl font-semibold mb-3">Login / Sign Up</h4> <div className="grid gap-3"> <input className="border rounded-xl px-3 py-2" placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /> <input className="border rounded-xl px-3 py-2" placeholder="Phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /> <input className="border rounded-xl px-3 py-2" placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /> <input type="password" className="border rounded-xl px-3 py-2" placeholder="Password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /> <button onClick={handleLogin} className="bg-black text-white px-4 py-2 rounded-xl font-semibold hover:bg-gray-900">Continue</button> </div> </div> <div className="bg-gray-50 rounded-2xl border p-5"> <h4 className="text-xl font-semibold mb-2">Why create an account?</h4> <ul className="list-disc list-inside text-gray-700 space-y-1"> <li>Track active & past orders</li> <li>Save favorites for quick re-order</li> <li>Faster checkout with auto-filled details</li> </ul> </div> </div> ) : ( <div className="grid gap-6"> <div className="flex items-center justify-between bg-white rounded-2xl shadow p-4"> <div> <div className="font-semibold">{user.name}</div> <div className="text-sm text-gray-600">{user.phone} · {user.email}</div> </div> <button onClick={handleLogout} className="px-3 py-1.5 rounded-xl border hover:bg-gray-100">Log out</button> </div>
+
+<div className="grid md:grid-cols-2 gap-6">
+        <div className="bg-white rounded-2xl shadow p-5">
+          <h4 className="text-xl font-semibold mb-3">My Orders</h4>
+          <div className="space-y-3 max-h-80 overflow-auto">
+            {orders.length === 0 && <p className="text-gray-600">No orders yet.</p>}
+            {orders.map((o) => (
+              <div key={o.code} className="border rounded-xl p-3 flex items-center justify-between">
+                <div>
+                  <div className="font-semibold">{o.code} — {o.product.name} ×{o.quantity}</div>
+                  <div className="text-sm text-gray-600">{o.fulfillment === "pickup" ? "Pickup" : `Delivery (${o.suburb || "Harare"})`} · {new Date(o.createdAt).toLocaleString()}</div>
+                  <div className="text-sm">Status: <span className="font-medium">{o.status}</span></div>
+                </div>
+                <a href={WHATSAPP_LINK} target="_blank" rel="noreferrer" className="text-sm underline">Message seller</a>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl shadow p-5">
+          <h4 className="text-xl font-semibold mb-3">Favorites</h4>
+          {favItems.length === 0 ? (
+            <p className="text-gray-600">No favorites yet. Go to the shop and tap ♡.</p>
+          ) : (
+            <div className="grid gap-3">
+              {favItems.map((p) => (
+                <div key={p.id} className="border rounded-xl p-3 flex items-center gap-3">
+                  <img src={p.img} alt={p.name} className="w-16 h-16 object-cover rounded-lg" />
+                  <div className="flex-1">
+                    <div className="font-semibold">{p.name}</div>
+                    <div className="text-sm text-gray-600">${p.price} · {p.stock > 0 ? `In stock (${p.stock})` : "Out of stock"}</div>
+                  </div>
+                  <button onClick={() => setRoute("shop")} className="px-3 py-1.5 rounded-xl border hover:bg-gray-100">Shop</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )}
+</section>
+
+); }
+
+function SellerPanel({ orders, markOrder }) { const [q, setQ] = useState(""); const filtered = orders.filter((o) => [o.code, o.product.name, o.user?.name, o.user?.phone].join(" ").toLowerCase().includes(q.toLowerCase()) );
+
+return ( <section className="p-6 md:p-10"> <h3 className="text-3xl font-bold mb-4">Seller Panel</h3> <p className="text-gray-600 mb-4">Use this to verify codes at pickup/delivery and update order status.</p> <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by code, name, phone, product" className="border rounded-xl px-3 py-2 w-full md:w-96" />
+
+<div className="mt-4 grid gap-3 max-h-[70vh] overflow-auto">
+    {filtered.length === 0 && <p className="text-gray-600">No orders found.</p>}
+    {filtered.map((o) => (
+      <div key={o.code} className="bg-white rounded-2xl shadow p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <div className="font-semibold">{o.code} — {o.product.name} ×{o.quantity}</div>
+            <div className="text-sm text-gray-600">{o.user?.name || "Guest"} · {o.user?.phone || "No phone"}</div>
+            <div className="text-sm">{o.fulfillment === "pickup" ? "Pickup" : `Delivery (${o.suburb || "Harare"})`} · {new Date(o.createdAt).toLocaleString()}</div>
+            {o.fulfillment === "delivery" && (
+              <div className="text-sm">Address: {o.address || "—"} · Fee: {o.deliveryFee ? `$${o.deliveryFee.toFixed(2)}` : "TBC"}</div>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <StatusBtn label="Mark Ready" onClick={() => markOrder(o.code, "Ready")} />
+            <StatusBtn label={o.fulfillment === "pickup" ? "Mark Collected" : "Mark In Transit"} onClick={() => markOrder(o.code, o.fulfillment === "pickup" ? "Collected" : "In Transit")} />
+            <StatusBtn label="Complete" onClick={() => markOrder(o.code, o.fulfillment === "pickup" ? "Collected" : "Delivered")} />
+          </div>
+        </div>
+        <div className="mt-2 text-sm">Status: <span className="font-semibold">{o.status}</span></div>
+      </div>
+    ))}
+  </div>
+</section>
+
+); }
+
+function StatusBtn({ label, onClick }) { return <button onClick={onClick} className="px-3 py-1.5 rounded-xl border hover:bg-gray-100">{label}</button>; }
+
+function Footer({ setRoute }) { return ( <footer className="bg-black text-white p-6 mt-10"> <div className="max-w-6xl mx-auto grid md:grid-cols-3 gap-6"> <div> <div className="text-xl font-semibold">Smoke Heist</div> <p className="text-sm text-white/80">18+ Only. Smoke Heist does not sell to minors.</p> </div> <div className="grid gap-1"> <button onClick={() => setRoute("home")} className="text-left underline">Home</button> <button onClick={() => setRoute("shop")} className="text-left underline">Shop</button> <button onClick={() => setRoute("how")} className="text-left underline">How to Order</button> <button onClick={() => setRoute("contact")} className="text-left underline">Contact</button> </div> <div className="grid gap-1"> <a href={tel:${PHONE_TEL}} className="underline">{PHONE_DISPLAY}</a> <a href={WHATSAPP_LINK} target="_blank" rel="noreferrer" className="underline">WhatsApp us</a> <p className="text-sm text-white/70">Harare delivery available · Fees by suburb</p> </div> </div> </footer> ); }
+
